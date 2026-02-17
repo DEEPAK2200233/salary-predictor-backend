@@ -7,30 +7,54 @@ import psycopg2
 import os
 import logging
 
-# Set up logging to see errors in Render logs
+# ----------------- Logging -----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# ----------------- FastAPI app -----------------
+app = FastAPI(
+    title="Salary Predictor & Job Search API",
+    version="1.0.0"
+)
 
-# Enable CORS for your frontend
+# CORS (allow your frontend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],          # tighten in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- DATABASE CONNECTION ---
+# ----------------- Database connection -----------------
 def get_db_connection():
-    # It looks for DATABASE_URL in Render Environment Variables
-    # If not found, it defaults to the string you provided
-    db_url = os.getenv("DATABASE_URL", "postgresql://job_user:3gx9r5k7H5cPbF7VGE76GmXdIX5Ai8Yu@dpg-d6a7kf3h46gs738aej5g-a.oregon-postgres.render.com/job_market_db_fdli")
+    """
+    Uses DATABASE_URL from Render env.
+    Fallback is your hardcoded Render Postgres URL.
+    Ensures sslmode=require is set.
+    """
+    db_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql://job_user:3gx9r5k7H5cPbF7VGE76GmXdIX5Ai8Yu@dpg-d6a7kf3h46gs738aej5g-a.oregon-postgres.render.com/job_market_db_fdli"
+    )
+
+    # Ensure sslmode=require for Render Postgres
+    if "sslmode=" not in db_url:
+        connector = "&" if "?" in db_url else "?"
+        db_url = f"{db_url}{connector}sslmode=require"
+
+    logger.info("Connecting to DB...")
     return psycopg2.connect(db_url)
 
-# --- LOAD ML ARTIFACTS ---
-# Ensure these files are in your root directory
+# ----------------- Load ML artifacts -----------------
+model = None
+role_encoder = None
+location_encoder = None
+work_mode_encoder = None
+employment_encoder = None
+scaler = None
+feature_columns = None
+
 try:
     model = joblib.load("salary_model.pkl")
     role_encoder = joblib.load("encoder_role.pkl")
@@ -39,11 +63,11 @@ try:
     employment_encoder = joblib.load("encoder_employment_type.pkl")
     scaler = joblib.load("scaler.pkl")
     feature_columns = joblib.load("feature_columns.pkl")
-    logger.info("ML Models loaded successfully")
+    logger.info("ML artifacts loaded successfully")
 except Exception as e:
     logger.error(f"Error loading ML artifacts: {e}")
 
-# --- SCHEMAS & UTILS ---
+# ----------------- Schemas & utils -----------------
 class SalaryInput(BaseModel):
     role: str
     location: str
@@ -52,39 +76,60 @@ class SalaryInput(BaseModel):
     experience_years: float
     skills: str
 
-def normalize_text(text):
+def normalize_text(text: str) -> str:
     return text.strip().lower() if text else ""
 
-def clean_role(role):
+def clean_role(role: str) -> str:
     role = normalize_text(role)
     mapping = {
-        "data scientist": "Data Scientist", "ds": "Data Scientist",
-        "data analyst": "Data Analyst", "analyst": "Data Analyst",
-        "business analyst": "Business Analyst", "bi analyst": "BI Analyst",
-        "analytics engineer": "Analytics Engineer", "senior data analyst": "Senior Data Analyst"
+        "data scientist": "Data Scientist",
+        "datascientist": "Data Scientist",
+        "ds": "Data Scientist",
+        "data analyst": "Data Analyst",
+        "analyst": "Data Analyst",
+        "business analyst": "Business Analyst",
+        "bi analyst": "BI Analyst",
+        "analytics engineer": "Analytics Engineer",
+        "senior data analyst": "Senior Data Analyst",
     }
     return mapping.get(role, role.title())
 
-def clean_location(location):
+def clean_location(location: str) -> str:
     location = normalize_text(location)
     mapping = {
-        "bangalore": "Bengaluru", "blr": "Bengaluru",
-        "delhi": "Delhi", "mumbai": "Mumbai", "remote": "Remote"
+        "bangalore": "Bengaluru",
+        "blr": "Bengaluru",
+        "delhi": "Delhi",
+        "mumbai": "Mumbai",
+        "remote": "Remote",
     }
     return mapping.get(location, location.title())
 
-def clean_employment(emp):
+def clean_employment(emp: str) -> str:
     emp = normalize_text(emp)
-    mapping = {"fulltime": "Full-time", "ft": "Full-time", "intern": "Internship", "contract": "Contract"}
+    mapping = {
+        "fulltime": "Full-time",
+        "full time": "Full-time",
+        "ft": "Full-time",
+        "intern": "Internship",
+        "internship": "Internship",
+        "contract": "Contract",
+    }
     return mapping.get(emp, "Full-time")
 
-def clean_work_mode(mode):
+def clean_work_mode(mode: str) -> str:
     mode = normalize_text(mode)
-    mapping = {"remote": "Remote", "onsite": "Onsite", "office": "Onsite", "hybrid": "Hybrid"}
+    mapping = {
+        "remote": "Remote",
+        "onsite": "Onsite",
+        "office": "Onsite",
+        "hybrid": "Hybrid",
+    }
     return mapping.get(mode, "Remote")
 
-def clean_skills(skills):
-    if not skills: return ""
+def clean_skills(skills: str) -> str:
+    if not skills:
+        return ""
     skills = skills.lower()
     for sep in [",", ";"]:
         skills = skills.replace(sep, "|")
@@ -92,33 +137,39 @@ def clean_skills(skills):
     parts = list(set([s.strip().title() for s in skills.split("|") if s.strip()]))
     return "|".join(parts)
 
-# --- ROUTES ---
-
+# ----------------- Routes -----------------
 @app.get("/")
 def health_check():
-    return {"status": "online", "message": "Salary Predictor API is running"}
+    return {"status": "online", "message": "Salary Predictor & Job Search API is running"}
 
 @app.post("/predict_salary")
 def predict_salary(data: SalaryInput):
     try:
+        if not all([model, role_encoder, location_encoder, work_mode_encoder,
+                    employment_encoder, scaler, feature_columns]):
+            raise RuntimeError("Model artifacts not loaded on server")
+
         user_input = {
             "role": clean_role(data.role),
             "location": clean_location(data.location),
             "work_mode": clean_work_mode(data.work_mode),
             "employment_type": clean_employment(data.employment_type),
             "experience_years": data.experience_years,
-            "skills": clean_skills(data.skills)
+            "skills": clean_skills(data.skills),
         }
 
         df = pd.DataFrame([user_input])
 
-        # Encoding
+        # Encode categorical features
         df["role"] = role_encoder.transform(df["role"])
         df["location"] = location_encoder.transform(df["location"])
         df["work_mode"] = work_mode_encoder.transform(df["work_mode"])
         df["employment_type"] = employment_encoder.transform(df["employment_type"])
 
+        # Ensure correct column order
         df = df.reindex(columns=feature_columns, fill_value=0)
+
+        # Scale and predict
         df_scaled = scaler.transform(df)
         prediction = model.predict(df_scaled)[0]
 
@@ -131,7 +182,7 @@ def predict_salary(data: SalaryInput):
 def get_jobs(
     jobTitle: str = Query("", description="Job Title search term"),
     location: str = Query("", description="Location search term"),
-    minSalary: float = Query(0, description="Minimum salary in LPA")
+    minSalary: float = Query(0, description="Minimum salary in LPA"),
 ):
     conn = None
     try:
@@ -153,7 +204,7 @@ def get_jobs(
             query += " AND location ILIKE %s"
             values.append(f"%{location}%")
 
-        if minSalary > 0:
+        if minSalary and minSalary > 0:
             query += " AND salary_lpa >= %s"
             values.append(minSalary)
 
@@ -164,14 +215,16 @@ def get_jobs(
 
         jobs = []
         for r in rows:
-            jobs.append({
-                "title": r[0],
-                "company": r[1],
-                "location": r[2],
-                "salary": f"{round(r[3], 1) if r[3] else 0} LPA",
-                "skills": r[4],
-                "experience": f"{r[5]} yrs"
-            })
+            jobs.append(
+                {
+                    "title": r[0],
+                    "company": r[1],
+                    "location": r[2],
+                    "salary": f"{round(r[3], 1) if r[3] else 0} LPA",
+                    "skills": r[4],
+                    "experience": f"{r[5]} yrs",
+                }
+            )
 
         cursor.close()
         return {"jobs": jobs}

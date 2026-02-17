@@ -28,20 +28,22 @@ app.add_middleware(
 
 # ----------------- Database connection -----------------
 def get_db_connection():
-    """
-    Uses DATABASE_URL from Render env.
-    Fallback is your hardcoded Render Postgres URL.
-    Ensures sslmode=require is set.
-    """
-    db_url = os.getenv(
-        "DATABASE_URL",
-        "postgresql://job_user:3gx9r5k7H5cPbF7VGE76GmXdIX5Ai8Yu@dpg-d6a7kf3h46gs738aej5g-a.oregon-postgres.render.com/job_market_db_fdli"
-    )
+    # Use the environment variable first
+    db_url = os.getenv("DATABASE_URL")
+    
+    # Fallback to your hardcoded one if the env var is missing
+    if not db_url:
+        db_url = "postgresql://job_user:3gx9r5k7H5cPbF7VGE76GmXdIX5Ai8Yu@dpg-d6a7kf3h46gs738aej5g-a.oregon-postgres.render.com/job_market_db_fdli"
 
-    # Ensure sslmode=require for Render Postgres
+    # CRITICAL: Fix for Render's SSL requirement
+    # Render URLs often need 'sslmode=require'
     if "sslmode=" not in db_url:
         connector = "&" if "?" in db_url else "?"
         db_url = f"{db_url}{connector}sslmode=require"
+    
+    # Also, some libraries prefer 'postgresql://' over 'postgres://'
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
 
     logger.info("Connecting to DB...")
     return psycopg2.connect(db_url)

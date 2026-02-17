@@ -5,14 +5,16 @@ import joblib
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all (safe for project/demo)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Load all saved artifacts
+
+# Load artifacts
 model = joblib.load("salary_model.pkl")
 role_encoder = joblib.load("encoder_role.pkl")
 location_encoder = joblib.load("encoder_location.pkl")
@@ -30,34 +32,104 @@ class SalaryInput(BaseModel):
     experience_years: float
     skills: str
 
+def normalize_text(text):
+    return text.strip().lower()
+def clean_role(role):
+    role = normalize_text(role)
+
+    mapping = {
+        "data scientist": "Data Scientist",
+        "datascientist": "Data Scientist",
+        "ds": "Data Scientist",
+
+        "data analyst": "Data Analyst",
+        "analyst": "Data Analyst",
+
+        "business analyst": "Business Analyst",
+        "bi analyst": "BI Analyst",
+        "analytics engineer": "Analytics Engineer",
+        "senior data analyst": "Senior Data Analyst"
+    }
+
+    return mapping.get(role, role.title())
+def clean_location(location):
+    location = normalize_text(location)
+
+    mapping = {
+        "bangalore": "Bengaluru",
+        "blr": "Bengaluru",
+        "delhi": "Delhi",
+        "mumbai": "Mumbai",
+        "remote": "Remote"
+    }
+
+    return mapping.get(location, location.title())
+
+def clean_employment(emp):
+    emp = normalize_text(emp)
+
+    mapping = {
+        "fulltime": "Full-time",
+        "full time": "Full-time",
+        "ft": "Full-time",
+
+        "intern": "Internship",
+        "internship": "Internship",
+
+        "contract": "Contract"
+    }
+
+    return mapping.get(emp, "Full-time")
+
+
+def clean_work_mode(mode):
+    mode = normalize_text(mode)
+
+    mapping = {
+        "remote": "Remote",
+        "onsite": "Onsite",
+        "office": "Onsite",
+        "hybrid": "Hybrid"
+    }
+
+    return mapping.get(mode, "Remote")
+def clean_skills(skills):
+    skills = skills.lower()
+
+    for sep in [",", ";", "  "]:
+        skills = skills.replace(sep, "|")
+
+    skills = skills.replace(" ", "|")
+
+    parts = list(set([s.strip().title() for s in skills.split("|") if s.strip()]))
+
+    return "|".join(parts)
+
 
 @app.post("/predict_salary")
+
 def predict_salary(data: SalaryInput):
     try:
         user_input = {
-            "role": data.role,
-            "location": data.location,
-            "work_mode": data.work_mode,
-            "employment_type": data.employment_type,
+            "role": clean_role(data.role),
+            "location": clean_location(data.location),
+            "work_mode": clean_work_mode(data.work_mode),
+            "employment_type": clean_employment(data.employment_type),
             "experience_years": data.experience_years,
-            "skills": data.skills
+            "skills": clean_skills(data.skills)
         }
 
         df = pd.DataFrame([user_input])
 
-        # Encode
         df["role"] = role_encoder.transform(df["role"])
         df["location"] = location_encoder.transform(df["location"])
         df["work_mode"] = work_mode_encoder.transform(df["work_mode"])
         df["employment_type"] = employment_encoder.transform(df["employment_type"])
 
-        # Align columns
         df = df.reindex(columns=feature_columns, fill_value=0)
 
-        # Scale
         df_scaled = scaler.transform(df)
 
-        # Predict
         prediction = model.predict(df_scaled)[0]
 
         return {"salary": float(prediction)}

@@ -147,13 +147,14 @@ def predict_salary(data: SalaryInput):
 
     except Exception as e:
         return {"error": str(e)}
+        
 @app.get("/api/jobs")
 def get_jobs(
     jobTitle: str = "",
     location: str = "",
     minSalary: float = 0
 ):
-    conn = psycopg2.connect(db_url, sslmode='require')
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     query = """
@@ -172,14 +173,11 @@ def get_jobs(
         query += " AND location ILIKE %s"
         values.append(f"%{location}%")
 
-    if minSalary and minSalary > 0:
+    if minSalary > 0:
         query += " AND salary_lpa >= %s"
         values.append(minSalary)
 
     query += " LIMIT 50"
-
-    print(query)
-    print(values)
 
     cursor.execute(query, tuple(values))
     rows = cursor.fetchall()

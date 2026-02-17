@@ -3,6 +3,9 @@ from pydantic import BaseModel
 import pandas as pd
 import joblib
 from fastapi.middleware.cors import CORSMiddleware
+import psycopg2
+from fastapi import Query
+
 
 app = FastAPI()
 
@@ -13,6 +16,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+import os
+import psycopg2
+
+def get_db_connection():
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
+
 
 # Load artifacts
 model = joblib.load("salary_model.pkl")
@@ -136,3 +146,55 @@ def predict_salary(data: SalaryInput):
 
     except Exception as e:
         return {"error": str(e)}
+@app.get("/api/jobs")
+def get_jobs(
+    jobTitle: str = "",
+    location: str = "",
+    minSalary: float = 0
+):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = """
+        SELECT role, company, location, salary_lpa, skills, experience_years
+        FROM job_postings
+        WHERE 1=1
+    """
+
+    values = []
+
+    if jobTitle:
+        query += " AND role ILIKE %s"
+        values.append(f"%{jobTitle}%")
+
+    if location:
+        query += " AND location ILIKE %s"
+        values.append(f"%{location}%")
+
+    if minSalary and minSalary > 0:
+        query += " AND salary_lpa >= %s"
+        values.append(minSalary)
+
+    query += " LIMIT 50"
+
+    print(query)
+    print(values)
+
+    cursor.execute(query, tuple(values))
+    rows = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    jobs = []
+    for r in rows:
+        jobs.append({
+            "title": r[0],
+            "company": r[1],
+            "location": r[2],
+            "salary": f"{round(r[3],1)} LPA",
+            "skills": r[4],
+            "experience": f"{r[5]} yrs"
+        })
+
+    return {"jobs": jobs}

@@ -153,7 +153,7 @@ def get_jobs(
     location: str = "",
     minSalary: float = 0
 ):
-    conn = get_db_connection()
+    conn = psycopg2.connect(db_url, sslmode='require')
     cursor = conn.cursor()
 
     query = """

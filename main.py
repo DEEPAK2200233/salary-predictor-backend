@@ -214,13 +214,15 @@ def get_jobs(
     jobs = []
     for _, r in df.iterrows():
         jobs.append({
-            "title": r["Job Title"],
-            "company": r.get("company", "Tech Company"),
+            "title": r["role"],  # Use "role" instead of "Job Title"
+            "company": r["company"],
             "location": r["location"],
-            "salary": r["salary"],
+            "salary": r["salarylpa"],  # Note: it's "salarylpa" not "salary"
             "skills": r["skills"],
-            "experience": f"{r['experience_years']} yrs",
-            "jobType": r.get("Job Type", "Full Time") # Added this for your frontend
+            "experience": f"{int(r['experienceyears'])} yrs",
+            "jobType": r["employmenttype"]
+        })
+        
         })
 
     return {"jobs": jobs}

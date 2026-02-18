@@ -7,6 +7,10 @@ import psycopg2
 import os
 import logging
 
+try:
+    jobs_df = pd.read_csv("cleaned_dataset.csv").fillna("")
+except:
+    jobs_df = pd.DataFrame()
 # ----------------- Logging -----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -182,58 +186,32 @@ def predict_salary(data: SalaryInput):
 
 @app.get("/api/jobs")
 def get_jobs(
-    jobTitle: str = Query("", description="Job Title search term"),
-    location: str = Query("", description="Location search term"),
-    minSalary: float = Query(0, description="Minimum salary in LPA"),
+    jobTitle: str = "",
+    location: str = "",
+    minSalary: float = 0
 ):
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    df = jobs_df.copy()
 
-        query = """
-            SELECT role, company, location, salary_lpa, skills, experience_years
-            FROM job_postings
-            WHERE 1=1
-        """
-        values = []
+    if jobTitle:
+        df = df[df["role"].str.contains(jobTitle, case=False, na=False)]
 
-        if jobTitle:
-            query += " AND role ILIKE %s"
-            values.append(f"%{jobTitle}%")
+    if location:
+        df = df[df["location"].str.contains(location, case=False, na=False)]
 
-        if location:
-            query += " AND location ILIKE %s"
-            values.append(f"%{location}%")
+    if minSalary and minSalary > 0:
+        df = df[df["salary_lpa"] >= minSalary]
 
-        if minSalary and minSalary > 0:
-            query += " AND salary_lpa >= %s"
-            values.append(minSalary)
+    df = df.head(50)
 
-        query += " LIMIT 50"
+    jobs = []
+    for _, r in df.iterrows():
+        jobs.append({
+            "title": r["role"],
+            "company": r.get("company", "Tech Company"),
+            "location": r["location"],
+            "salary": f"{round(r['salary_lpa'],1) if pd.notna(r['salary_lpa']) else 0} LPA",
+            "skills": r["skills"],
+            "experience": f"{r['experience_years']} yrs"
+        })
 
-        cursor.execute(query, tuple(values))
-        rows = cursor.fetchall()
-
-        jobs = []
-        for r in rows:
-            jobs.append(
-                {
-                    "title": r[0],
-                    "company": r[1],
-                    "location": r[2],
-                    "salary": f"{round(r[3], 1) if r[3] else 0} LPA",
-                    "skills": r[4],
-                    "experience": f"{r[5]} yrs",
-                }
-            )
-
-        cursor.close()
-        return {"jobs": jobs}
-
-    except Exception as e:
-        logger.error(f"Database error: {e}")
-        return {"error": "Internal Server Error", "details": str(e)}
-    finally:
-        if conn:
-            conn.close()
+    return {"jobs": jobs}

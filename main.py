@@ -222,3 +222,32 @@ def get_jobs(
         })
 
     return {"jobs": jobs}
+
+
+@app.get("/api/skills")
+def skill_gap(role: str = "", user_skills: str = ""):
+    df = jobs_df.copy()
+
+    if role:
+        df = df[df["role"].str.contains(role, case=False, na=False)]
+
+    # Extract all skills
+    all_skills = []
+
+    for skills in df["skills"].dropna():
+        parts = [s.strip().lower() for s in skills.split("|")]
+        all_skills.extend(parts)
+
+    # Count most common skills
+    skill_counts = pd.Series(all_skills).value_counts().head(15)
+
+    top_skills = list(skill_counts.index)
+
+    # User skill gap
+    user_skill_list = [s.strip().lower() for s in user_skills.split(",") if s.strip()]
+    missing_skills = [s for s in top_skills if s not in user_skill_list]
+
+    return {
+        "top_skills": top_skills,
+        "missing_skills": missing_skills
+    }

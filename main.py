@@ -190,28 +190,37 @@ def get_jobs(
     location: str = "",
     minSalary: float = 0
 ):
+    if jobs_df.empty:
+        return {"jobs": []}
+
     df = jobs_df.copy()
 
+    # 1. Filter by Job Title (matches "Job Title" column in your CSV)
     if jobTitle:
-        df = df[df["role"].str.contains(jobTitle, case=False, na=False)]
+        df = df[df["Job Title"].str.contains(jobTitle, case=False, na=False)]
 
+    # 2. Filter by Location
     if location:
         df = df[df["location"].str.contains(location, case=False, na=False)]
 
+    # 3. Filter by Salary (Handles the "LPA" string in your CSV)
     if minSalary and minSalary > 0:
-        df = df[df["salary_lpa"] >= minSalary]
+        # Convert "14.2 LPA" -> 14.2
+        temp_salary = df["salary"].str.replace(" LPA", "", case=False).astype(float)
+        df = df[temp_salary >= minSalary]
 
     df = df.head(50)
 
     jobs = []
     for _, r in df.iterrows():
         jobs.append({
-            "title": r["role"],
+            "title": r["Job Title"],
             "company": r.get("company", "Tech Company"),
             "location": r["location"],
-            "salary": f"{round(r['salary_lpa'],1) if pd.notna(r['salary_lpa']) else 0} LPA",
+            "salary": r["salary"],
             "skills": r["skills"],
-            "experience": f"{r['experience_years']} yrs"
+            "experience": f"{r['experience_years']} yrs",
+            "jobType": r.get("Job Type", "Full Time") # Added this for your frontend
         })
 
     return {"jobs": jobs}

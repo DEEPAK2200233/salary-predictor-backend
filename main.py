@@ -195,32 +195,30 @@ def get_jobs(
 
     df = jobs_df.copy()
 
-    # 1. Filter by Job Title (matches "Job Title" column in your CSV)
+    # 1. Filter by Job Title (matches "role" column in your CSV)
     if jobTitle:
-        df = df[df["Job Title"].str.contains(jobTitle, case=False, na=False)]
+        df = df[df["role"].str.contains(jobTitle, case=False, na=False)]
 
     # 2. Filter by Location
     if location:
         df = df[df["location"].str.contains(location, case=False, na=False)]
 
-    # 3. Filter by Salary (Handles the "LPA" string in your CSV)
+    # 3. Filter by Salary (the column "salary_lpa" is already a float)
     if minSalary and minSalary > 0:
-        # Convert "14.2 LPA" -> 14.2
-        temp_salary = df["salary"].str.replace(" LPA", "", case=False).astype(float)
-        df = df[temp_salary >= minSalary]
+        df = df[df["salary_lpa"] >= minSalary]
 
     df = df.head(50)
 
     jobs = []
     for _, r in df.iterrows():
         jobs.append({
-            "title": r["role"],  # Use "role" instead of "Job Title"
+            "title": r["role"],  # Corrected from "role"
             "company": r["company"],
             "location": r["location"],
-            "salary": r["salarylpa"],  # Note: it's "salarylpa" not "salary"
+            "salary": f"{r['salary_lpa']} LPA", # Corrected from "salarylpa"
             "skills": r["skills"],
-            "experience": f"{int(r['experienceyears'])} yrs",
-            "jobType": r["employmenttype"]
+            "experience": f"{int(r['experience_years'])} yrs", # Corrected from "experienceyears"
+            "jobType": r["employment_type"] # Corrected from "employmenttype"
         })
 
     return {"jobs": jobs}

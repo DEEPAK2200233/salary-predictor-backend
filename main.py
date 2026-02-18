@@ -222,7 +222,5 @@ def get_jobs(
             "experience": f"{int(r['experienceyears'])} yrs",
             "jobType": r["employmenttype"]
         })
-        
-        })
 
     return {"jobs": jobs}

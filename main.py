@@ -7,7 +7,7 @@ import psycopg2
 import os
 import logging
 
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
@@ -162,35 +162,39 @@ def predict_salary(data: SalaryInput):
 
 
 # ----------------- AI Recruitment Matching -----------------
+# ----------------- Lightweight AI Recruitment Matching -----------------
+
 @app.post("/api/match_candidates")
 def match_candidates(data: RecruitMatchInput):
     try:
-        if not embedding_model:
-            raise RuntimeError("Embedding model not loaded")
-
         if not data.candidates:
             return {"matches": []}
 
-        # 1️⃣ Embed job role
-        role_embedding = embedding_model.encode([data.role])
-
-        # 2️⃣ Create candidate text corpus
+        # 1️⃣ Prepare candidate text corpus
         candidate_texts = []
         for c in data.candidates:
             text = f"{c.get('Name','')} {c.get('Skills','')} {c.get('Experience','')}"
             candidate_texts.append(text)
 
-        candidate_embeddings = embedding_model.encode(candidate_texts)
+        # 2️⃣ Add role to corpus
+        corpus = [data.role] + candidate_texts
 
-        # 3️⃣ Compute similarity
-        similarities = cosine_similarity(role_embedding, candidate_embeddings)[0]
+        # 3️⃣ TF-IDF Vectorization
+        vectorizer = TfidfVectorizer(stop_words="english")
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+
+        # 4️⃣ Compute cosine similarity
+        role_vector = tfidf_matrix[0]
+        candidate_vectors = tfidf_matrix[1:]
+
+        similarities = cosine_similarity(role_vector, candidate_vectors)[0]
 
         ranked_results = []
 
         for i, score in enumerate(similarities):
             candidate = data.candidates[i].copy()
 
-            # 🔥 Experience Boost (optional weighting)
+            # 🔥 Experience Weight Boost
             experience = float(candidate.get("Experience", 0))
             weighted_score = float(score) + (experience * 0.02)
 
@@ -206,7 +210,6 @@ def match_candidates(data: RecruitMatchInput):
     except Exception as e:
         logger.error(f"Matching error: {e}")
         return {"error": str(e)}
-
 
 # ----------------- Job Search API -----------------
 @app.get("/api/jobs")

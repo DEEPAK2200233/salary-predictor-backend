@@ -4,5 +4,8 @@ pandas
 scikit-learn
 joblib
 psycopg2-binary==2.9.9
+
+# Force CPU torch
+torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+
 sentence-transformers
-scikit-learn

@@ -5,3 +5,4 @@ numpy==1.26.4
 scikit-learn==1.4.2
 joblib
 psycopg2-binary==2.9.9
+sentence-transformers==2.7.0

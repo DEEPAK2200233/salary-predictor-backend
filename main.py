@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 import os
 import logging
-
+from sentence_transformers import SentenceTransformer, util
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -163,8 +163,6 @@ def predict_salary(data: SalaryInput):
 
 # ----------------- AI Recruitment Matching -----------------
 # ----------------- Lightweight AI Recruitment Matching -----------------
-from sentence_transformers import SentenceTransformer, util
-import numpy as np
 
 # Load a lightweight, high-performance model once (outside the function)
 model = SentenceTransformer('all-MiniLM-L6-v2')

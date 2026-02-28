@@ -163,6 +163,12 @@ def predict_salary(data: SalaryInput):
 
 # ----------------- AI Recruitment Matching -----------------
 # ----------------- Lightweight AI Recruitment Matching -----------------
+from sentence_transformers import SentenceTransformer, util
+import numpy as np
+
+# Load a lightweight, high-performance model once (outside the function)
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
 
 @app.post("/api/match_candidates")
 def match_candidates(data: RecruitMatchInput):
@@ -170,46 +176,42 @@ def match_candidates(data: RecruitMatchInput):
         if not data.candidates:
             return {"matches": []}
 
-        # 1️⃣ Prepare candidate text corpus
-        candidate_texts = []
-        for c in data.candidates:
-            text = f"{c.get('Name','')} {c.get('Skills','')} {c.get('Experience','')}"
-            candidate_texts.append(text)
+        # 1. Create rich semantic strings
+        candidate_texts = [
+            f"Candidate specializes in {c.get('Skills', '')}. Experience: {c.get('Experience', '')} years. Name: {c.get('Name', '')}"
+            for c in data.candidates
+        ]
 
-        # 2️⃣ Add role to corpus
-        corpus = [data.role] + candidate_texts
+        # 2. Encode to semantic vectors
+        role_embedding = model.encode(data.role, convert_to_tensor=True)
+        candidate_embeddings = model.encode(candidate_texts, convert_to_tensor=True)
 
-        # 3️⃣ TF-IDF Vectorization
-        vectorizer = TfidfVectorizer(stop_words="english")
-        tfidf_matrix = vectorizer.fit_transform(corpus)
-
-        # 4️⃣ Compute cosine similarity
-        role_vector = tfidf_matrix[0]
-        candidate_vectors = tfidf_matrix[1:]
-
-        similarities = cosine_similarity(role_vector, candidate_vectors)[0]
+        # 3. Compute Cosine Similarity
+        # Result is a tensor of shape [1, num_candidates]
+        cosine_scores = util.cos_sim(role_embedding, candidate_embeddings)[0]
 
         ranked_results = []
-
-        for i, score in enumerate(similarities):
+        for i, score in enumerate(cosine_scores):
             candidate = data.candidates[i].copy()
+            base_score = float(score)
 
-            # 🔥 Experience Weight Boost
-            experience = float(candidate.get("Experience", 0))
-            weighted_score = float(score) + (experience * 0.02)
+            # 4. Logical Experience Weighting
+            # We use a logarithmic scale so 20 years isn't 10x better than 2 years
+            years = float(candidate.get("Experience", 0))
+            exp_factor = np.log1p(years) * 0.05  # Gentle boost
 
-            candidate["match_score"] = round(weighted_score, 4)
+            final_score = base_score + exp_factor
+
+            candidate["match_score"] = round(final_score, 4)
             ranked_results.append(candidate)
 
+        # Sort and return
         ranked_results.sort(key=lambda x: x["match_score"], reverse=True)
-
-        return {
-            "matches": ranked_results[:5]
-        }
+        return {"matches": ranked_results[:5]}
 
     except Exception as e:
         logger.error(f"Matching error: {e}")
-        return {"error": str(e)}
+        return {"error": "Internal matching failure"}
 
 # ----------------- Job Search API -----------------
 @app.get("/api/jobs")

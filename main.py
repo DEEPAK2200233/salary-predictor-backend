@@ -152,7 +152,7 @@ def match_candidates(data: RecruitMatchInput):
         company_budget = data.company_budget if data.company_budget else 15.0
 
         # 🔹 Get required skills from CSV
-        role_row = roles_df[roles_df["role"].str.lower() == role_text]
+        roles_df["role"].str.lower().str.contains(role_text)
 
         if role_row.empty:
             return {"error": "Role not found in system"}

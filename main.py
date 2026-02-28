@@ -151,11 +151,13 @@ def match_candidates(data: RecruitMatchInput):
         role_text = data.role.strip().lower()
         company_budget = data.company_budget if data.company_budget else 15.0
 
-        # 🔹 Get required skills from CSV
-        roles_df["role"].str.lower().str.contains(role_text)
+        # ✅ Proper role matching
+        role_row = roles_df[
+            roles_df["role"].str.lower().str.contains(role_text)
+        ]
 
         if role_row.empty:
-            return {"error": "Role not found in system"}
+            return {"error": f"Role '{data.role}' not found in system"}
 
         required_skills = [
             skill.strip().lower()
@@ -177,7 +179,7 @@ def match_candidates(data: RecruitMatchInput):
                 if skill in candidate_skills
             )
 
-            skill_score = matches / len(required_skills)
+            skill_score = matches / len(required_skills) if required_skills else 0
 
             # -------------------------
             # Experience Score

@@ -3,7 +3,6 @@ from pydantic import BaseModel
 import pandas as pd
 import joblib
 from fastapi.middleware.cors import CORSMiddleware
-import psycopg2
 import os
 import logging
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -34,24 +33,6 @@ try:
     jobs_df = pd.read_csv("cleaned_dataset.csv").fillna("")
 except:
     jobs_df = pd.DataFrame()
-
-# ----------------- Database Connection -----------------
-def get_db_connection():
-    db_url = os.getenv("DATABASE_URL")
-
-    if not db_url:
-        db_url = "postgresql://job_user:3gx9r5k7H5cPbF7VGE76GmXdIX5Ai8Yu@dpg-d6a7kf3h46gs738aej5g-a.oregon-postgres.render.com/job_market_db_fdli"
-
-    if "sslmode=" not in db_url:
-        connector = "&" if "?" in db_url else "?"
-        db_url = f"{db_url}{connector}sslmode=require"
-
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-    logger.info("Connecting to DB...")
-    return psycopg2.connect(db_url)
-
 
 # ----------------- Load Salary ML Artifacts -----------------
 model = None

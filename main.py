@@ -168,17 +168,14 @@ def match_candidates(data: RecruitMatchInput):
 
         for candidate in data.candidates:
             candidate_copy = candidate.copy()
+            candidate_skill_list = [
+                s.strip().lower()
+                for s in str(candidate.get("Skills", "")).split(",")
+            ]
 
-            candidate_skills = str(candidate.get("Skills", "")).lower()
-
-            # -------------------------
-            # Skill Matching Score
-            # -------------------------
-            matches = sum(
-                1 for skill in required_skills
-                if skill in candidate_skills
+            matches = len(
+                set(required_skills) & set(candidate_skill_list)
             )
-
             skill_score = matches / len(required_skills) if required_skills else 0
 
             # -------------------------
@@ -208,15 +205,17 @@ def match_candidates(data: RecruitMatchInput):
             # -------------------------
             # Final Weighted Score
             # -------------------------
+           # Final Weighted Score
             final_score = (
                 0.6 * skill_score +
                 0.3 * exp_score +
                 0.1 * salary_score
             )
-
             candidate_copy["match_score"] = round(final_score, 4)
 
-            ranked_results.append(candidate_copy)
+# Only include if skill match exists
+            if skill_score >= 0.3:
+                ranked_results.append(candidate_copy)
 
         ranked_results.sort(key=lambda x: x["match_score"], reverse=True)
 

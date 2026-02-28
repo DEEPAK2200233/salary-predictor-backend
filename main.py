@@ -8,6 +8,7 @@ import logging
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+from typing import Optional
 
 
 # ----------------- Logging -----------------
@@ -133,7 +134,14 @@ def predict_salary(data: SalaryInput):
 
 # ----------------- AI Recruitment Matching -----------------
 # ----------------- Lightweight AI Recruitment Matching -----------------
+class RecruitMatchInput(BaseModel):
+    role: str
+    candidates: list
+    company_budget: Optional[float] = None   # Optional budget from frontend
+
+
 vectorizer = TfidfVectorizer()
+
 
 @app.post("/api/match_candidates")
 def match_candidates(data: RecruitMatchInput):
@@ -141,14 +149,22 @@ def match_candidates(data: RecruitMatchInput):
         if not data.candidates:
             return {"matches": []}
 
-        # 1️⃣ Prepare text corpus
-        candidate_texts = [
-            f"{c.get('Skills', '')} {c.get('Experience', '')}"
-            for c in data.candidates
-        ]
+        role_text = data.role.strip().lower()
 
-        # Combine role + candidates
-        corpus = [data.role] + candidate_texts
+        # Default company budget if not provided
+        company_budget = data.company_budget if data.company_budget else 15.0
+
+        # 1️⃣ Prepare corpus (Role + Candidates)
+        candidate_texts = []
+        for c in data.candidates:
+            skills = str(c.get("Skills", ""))
+            exp = str(c.get("Experience", ""))
+            loc = str(c.get("Location", ""))
+
+            combined_text = f"{skills} {exp} {loc}".lower()
+            candidate_texts.append(combined_text)
+
+        corpus = [role_text] + candidate_texts
 
         # 2️⃣ TF-IDF Vectorization
         tfidf_matrix = vectorizer.fit_transform(corpus)
@@ -156,34 +172,69 @@ def match_candidates(data: RecruitMatchInput):
         role_vector = tfidf_matrix[0:1]
         candidate_vectors = tfidf_matrix[1:]
 
-        # 3️⃣ Cosine Similarity
+        # 3️⃣ Cosine Similarity (Skill Match Score)
         similarities = cosine_similarity(role_vector, candidate_vectors)[0]
 
         ranked_results = []
 
-        for i, score in enumerate(similarities):
+        for i, base_score in enumerate(similarities):
             candidate = data.candidates[i].copy()
 
-            base_score = float(score)
+            # -----------------------
+            # Base Skill Score
+            # -----------------------
+            skill_score = float(base_score)
 
-            # Experience boost (log scaling)
-            years = float(candidate.get("Experience", 0))
-            exp_factor = np.log1p(years) * 0.05
+            # -----------------------
+            # Experience Boost
+            # -----------------------
+            try:
+                years = float(candidate.get("Experience", 0))
+            except:
+                years = 0
 
-            final_score = base_score + exp_factor
+            # Log scaling so senior candidates don’t dominate
+            exp_score = np.log1p(years) * 0.05
 
+            # -----------------------
+            # Salary Compatibility
+            # -----------------------
+            try:
+                expected_salary = float(candidate.get("Expected Salary", 0))
+            except:
+                expected_salary = 0
+
+            if expected_salary > 0:
+                salary_diff = abs(company_budget - expected_salary)
+
+                # Smaller difference = better match
+                salary_score = max(0, 1 - (salary_diff / company_budget)) * 0.15
+            else:
+                salary_score = 0
+
+            # -----------------------
+            # Final Score
+            # -----------------------
+            final_score = skill_score + exp_score + salary_score
+
+            candidate["skill_score"] = round(skill_score, 4)
+            candidate["experience_score"] = round(exp_score, 4)
+            candidate["salary_score"] = round(salary_score, 4)
             candidate["match_score"] = round(final_score, 4)
+
             ranked_results.append(candidate)
 
-        # 4️⃣ Sort & return top 5
+        # 4️⃣ Sort by Final Score
         ranked_results.sort(key=lambda x: x["match_score"], reverse=True)
 
+        # 5️⃣ Return Top 5
         return {"matches": ranked_results[:5]}
 
     except Exception as e:
         logger.error(f"Matching error: {e}")
         return {"error": "Internal matching failure"}
-# ----------------- Job Search API -----------------
+
+
 @app.get("/api/jobs")
 def get_jobs(jobTitle: str = "", location: str = "", minSalary: float = 0):
 

@@ -6,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 import os
 import logging
-from sentence_transformers import SentenceTransformer, util
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -74,16 +73,6 @@ try:
     logger.info("Salary ML artifacts loaded successfully")
 except Exception as e:
     logger.error(f"Error loading salary ML artifacts: {e}")
-
-
-# ----------------- Load AI Matching Model -----------------
-embedding_model = None
-
-try:
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    logger.info("Embedding model loaded successfully")
-except Exception as e:
-    logger.error(f"Error loading embedding model: {e}")
 
 
 # ----------------- Schemas -----------------
@@ -163,10 +152,7 @@ def predict_salary(data: SalaryInput):
 
 # ----------------- AI Recruitment Matching -----------------
 # ----------------- Lightweight AI Recruitment Matching -----------------
-
-# Load a lightweight, high-performance model once (outside the function)
-model = SentenceTransformer('all-MiniLM-L6-v2')
-
+vectorizer = TfidfVectorizer()
 
 @app.post("/api/match_candidates")
 def match_candidates(data: RecruitMatchInput):
@@ -174,43 +160,48 @@ def match_candidates(data: RecruitMatchInput):
         if not data.candidates:
             return {"matches": []}
 
-        # 1. Create rich semantic strings
+        # 1️⃣ Prepare text corpus
         candidate_texts = [
-            f"Candidate specializes in {c.get('Skills', '')}. Experience: {c.get('Experience', '')} years. Name: {c.get('Name', '')}"
+            f"{c.get('Skills', '')} {c.get('Experience', '')}"
             for c in data.candidates
         ]
 
-        # 2. Encode to semantic vectors
-        role_embedding = model.encode(data.role, convert_to_tensor=True)
-        candidate_embeddings = model.encode(candidate_texts, convert_to_tensor=True)
+        # Combine role + candidates
+        corpus = [data.role] + candidate_texts
 
-        # 3. Compute Cosine Similarity
-        # Result is a tensor of shape [1, num_candidates]
-        cosine_scores = util.cos_sim(role_embedding, candidate_embeddings)[0]
+        # 2️⃣ TF-IDF Vectorization
+        tfidf_matrix = vectorizer.fit_transform(corpus)
+
+        role_vector = tfidf_matrix[0:1]
+        candidate_vectors = tfidf_matrix[1:]
+
+        # 3️⃣ Cosine Similarity
+        similarities = cosine_similarity(role_vector, candidate_vectors)[0]
 
         ranked_results = []
-        for i, score in enumerate(cosine_scores):
+
+        for i, score in enumerate(similarities):
             candidate = data.candidates[i].copy()
+
             base_score = float(score)
 
-            # 4. Logical Experience Weighting
-            # We use a logarithmic scale so 20 years isn't 10x better than 2 years
+            # Experience boost (log scaling)
             years = float(candidate.get("Experience", 0))
-            exp_factor = np.log1p(years) * 0.05  # Gentle boost
+            exp_factor = np.log1p(years) * 0.05
 
             final_score = base_score + exp_factor
 
             candidate["match_score"] = round(final_score, 4)
             ranked_results.append(candidate)
 
-        # Sort and return
+        # 4️⃣ Sort & return top 5
         ranked_results.sort(key=lambda x: x["match_score"], reverse=True)
+
         return {"matches": ranked_results[:5]}
 
     except Exception as e:
         logger.error(f"Matching error: {e}")
         return {"error": "Internal matching failure"}
-
 # ----------------- Job Search API -----------------
 @app.get("/api/jobs")
 def get_jobs(jobTitle: str = "", location: str = "", minSalary: float = 0):

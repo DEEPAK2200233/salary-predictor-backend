@@ -56,6 +56,14 @@ try:
 except Exception as e:
     logger.error(f"Error loading salary ML artifacts: {e}")
 
+# ----------------- Load Match Model -----------------
+match_model = None
+
+try:
+    match_model = joblib.load("candidate_match_model.pkl")
+    logger.info("Candidate Match ML model loaded successfully")
+except Exception as e:
+    logger.error(f"Error loading match model: {e}")
 
 # ----------------- Schemas -----------------
 class SalaryInput(BaseModel):
@@ -205,17 +213,20 @@ def match_candidates(data: RecruitMatchInput):
             # -------------------------
             # Final Weighted Score
             # -------------------------
-           # Final Weighted Score
-            final_score = (
-                0.6 * skill_score +
-                0.3 * exp_score +
-                0.1 * salary_score
-            )
-            candidate_copy["match_score"] = round(final_score, 4)
+            # ML Prediction
+            features = [[skill_score, exp_score, salary_score]]
+
+            if match_model:
+                probability = match_model.predict_proba(features)[0][1]
+            else:
+                probability = 0
+
+            candidate_copy["match_score"] = round(float(probability), 4)
+
+            if probability >= 0.3:
+                ranked_results.append(candidate_copy)
 
 # Only include if skill match exists
-            if skill_score >= 0.3:
-                ranked_results.append(candidate_copy)
 
         ranked_results.sort(key=lambda x: x["match_score"], reverse=True)
 
